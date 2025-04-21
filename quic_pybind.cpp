@@ -13,12 +13,12 @@
 #include <pybind11/stl.h>
 #include <tuple>
 
+#include <boost/math/special_functions/erf.hpp>
 #include "eigen-3.4.0/Eigen/Dense"
 
 #define EPSILON std::sqrt(std::numeric_limits<double>::epsilon())
 #define INF std::numeric_limits<double>::infinity()
 #define NAN std::numeric_limits<double>::quiet_NaN()
-#define BPN 1e12
 
 namespace py = pybind11;
 using MAT_DN = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
@@ -42,7 +42,7 @@ extern "C" {
         uint32_t* iter, double* dGap, double* neg_logdetX_trSX);
 };
 
-double erfinv(double x) {
+double erfinv_approx(double x) {
     double w, p;
     double sign;
     if (x >= 0) {
@@ -79,6 +79,11 @@ double erfinv(double x) {
     }
     return sign * p * x;
 }
+
+double erfinv(double x) {
+ return boost::math::erf_inv(x);
+}
+
 
 double trace(const MAT_DN& A) {
     return A.diagonal().sum();
@@ -118,8 +123,6 @@ std::tuple<MAT_DN, VEC_DN> compute_S(MAT_DN_MAP& Y, const std::string& mode = "c
 }
 
 std::tuple<
-    py::array_t<double>,// iC_array,
-    py::array_t<double>,// C_array,
     py::array_t<double>,// X_array,
     py::array_t<double>// W_array,
 > AQUIC(
@@ -145,14 +148,6 @@ std::tuple<
 
     // Map matrices to Eigen
     MAT_DN_MAP Y(static_cast<double*>(Y_buf.ptr), p, n);
-
-    py::array_t<double> iC_array({ p, p });
-    auto buf_iC = iC_array.request();
-    MAT_DN_MAP iC(static_cast<double*>(buf_iC.ptr), p, p);
-
-    py::array_t<double> C_array({ p, p });
-    auto buf_C = C_array.request();
-    MAT_DN_MAP C(static_cast<double*>(buf_C.ptr), p, p);
 
     py::array_t<double> X_array({ p, p });
     auto buf_X = X_array.request();
@@ -189,25 +184,17 @@ std::tuple<
     //Variance Matrix:V = S^2 + np.outer(diag(S), diag(S))
     VEC_DN diagS = S.diagonal();
     MAT_DN V = S.array().square().matrix() + diagS * diagS.transpose();
+    MAT_DN L_base = V.array().sqrt(); // sqrt(V) for element-wise sqrt
+    L_base.diagonal().setConstant(1e-12);
 
-    //Lambda Matrix L
-    double factor = erfinv(1. - 2. * gamma) / std::sqrt(2. * k);
-    MAT_DN L = factor * V.array().sqrt(); // sqrt(V) for element-wise sqrt
-    L.diagonal().setConstant(1e-12);
-
-    MAT_DN Q(p, p);
+    MAT_DN L(p, p);
     X.setIdentity();
     W.setIdentity();
 
-    std::function<double(double)> glasso_call = [&](double _rho) {
+    std::function<std::tuple<double,double,size_t,double,double>(double)> glasso_call = [&](double _k) {
 
-        if (_rho > EPSILON) {
-            Q = S;
-            if (Q.diagonal().minCoeff() < 1e-12) return INF;
-        }
-        else {
-            Q = S;
-        }
+        double factor = erfinv(1. - 2. * gamma) / std::sqrt(2. * _k);
+        L = factor * L_base;
 
         char _mode = 'D';
         uint32_t _p = p;
@@ -221,31 +208,30 @@ std::tuple<
         double _tol = tol;
         uint32_t _max_iter = max_iter;
         int32_t _verbose = std::max(0, verbose - 1);
-        QUIC(_mode, _p, Q.data(), L.data(), _path_len, _path, _tol, _verbose, _max_iter, X.data(), W.data(), _opt, _cputime, _iter, _dGap, _neg_logdetX_trSX);
+        QUIC(_mode, _p, S.data(), L.data(), _path_len, _path, _tol, _verbose, _max_iter, X.data(), W.data(), _opt, _cputime, _iter, _dGap, _neg_logdetX_trSX);
 
         // Catch if something went wrong. 
-        if (_iter[0] < 0 || std::isnan(_neg_logdetX_trSX[0])) return INF;
-        return _opt[0];
+        if (_iter[0] < 0 || std::isnan(_neg_logdetX_trSX[0])) std::make_tuple(INF, INF,0,0,0);
+
+        // drop small values
+        W = (W.array().abs() >= EPSILON).select(W, 0.0);
+        X = (X.array().abs() >= EPSILON).select(X, 0.0);
+
+        double X_nnzpr = double((X.array() != 0.0).count())/double(p);
+        double W_nnzpr = double((W.array() != 0.0).count())/double(p);
+
+        return std::make_tuple(_neg_logdetX_trSX[0], _opt[0],size_t(_iter[0]),X_nnzpr,W_nnzpr);
     };
 
-    double obj_glasso = glasso_call(0);
-    
-    // Drop out small values
-    W = (W.array().abs() >= EPSILON).select(W, 0.0);
-    X = (X.array().abs() >= EPSILON).select(X, 0.0);
-    
-    iC = X;
-    C  = W;
+    auto result   = glasso_call(k);
 
     // Scale back output 
     X = scale_icor_icov.asDiagonal() * X * scale_icor_icov.asDiagonal();
     W = scale_cor_cov.asDiagonal() * W * scale_cor_cov.asDiagonal();
 
-    iC = scale_icor_icov.asDiagonal() * iC * scale_icor_icov.asDiagonal();
-    C = scale_cor_cov.asDiagonal() * C * scale_cor_cov.asDiagonal();
-
-    return  std::make_tuple(iC_array, C_array, X_array, W_array);
+    return  std::make_tuple(X_array, W_array);
 }
+
 
 PYBIND11_MODULE(quic_pybind, m) {
     m.def("AQUIC", &AQUIC, "get low rank");

@@ -10,6 +10,7 @@ PYTHON = python3.12
 # Detect platform
 UNAME_S := $(shell uname -s)
 
+BOOST_INC = -I/opt/homebrew/opt/boost/include
 
 # Include Pybind11 and Python
 PYBIND11_INCLUDE = $(shell ${PYTHON} -m pybind11 --includes)
@@ -45,7 +46,7 @@ $(TARGET): $(OBJS)
 
 # Compile source files into object files
 %.o: %.cpp
-	$(CC) $(CFLAGS) $(PYBIND11_INCLUDE) $(PYTHON_INCLUDE) -c $< -o $@
+	$(CC) $(CFLAGS) $(PYBIND11_INCLUDE) $(PYTHON_INCLUDE) $(BOOST_INC) -c $< -o $@
 
 # Clean up object files and shared library
 clean:

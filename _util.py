@@ -29,7 +29,7 @@ numpy2ri.activate()
 
 import quic_pybind
 
-def make_cov(p, data_type,seed=1):
+def make_cov(p, data_type,dense=False,seed=1):
 
     np.random.seed(seed)
 
@@ -98,9 +98,13 @@ def make_cov(p, data_type,seed=1):
 
     temp  = r['out'].rx2('omega')
 
-    iC = np.round(np.array(temp),12)
-
+    iC = np.round(np.array(temp),12) 
     C  = np.linalg.inv(iC)
+
+    if dense is True:
+        uCu = np.sum(C)
+        iC += uCu
+        C = np.linalg.inv(iC)
 
     return iC,C
 
@@ -162,33 +166,80 @@ def compute_ledoit(Y):
     }
     return SimpleNamespace(**result)
 
-def compute_aquic(Y,k=None,gamma=None,tol=1e-4,max_iter=100,verbose=0):
+
+def compute_aquic_test(Y,k=None,c=None,tol=1e-4,max_iter=100,verbose=0):
 
     p,n = Y.shape
 
-    if gamma is None:
-        gamma=1/100
+    # Set default for c if not provided
+    if c is None:
+        c = 10.0
+        if c>=p:
+            c = p - 0.5
+
+    gamma = (1 - sp.special.erf(2 * sp.special.erfinv(1 - c / p))) / 2
+    gamma = np.clip(gamma, 1e-12, 0.5 - 1e-12)
 
     if k is None:
         k = n/2
+    k = np.clip(k,1,n)
 
     runtime = time.time()
 
     Y = np.array(np.ascontiguousarray(Y, dtype=np.float64),order='F')
 
-    iC, C, X, W = quic_pybind.AQUIC(Y, k, gamma, tol, max_iter, verbose) 
+    X, W = quic_pybind.AQUIC(Y, k, gamma, tol, max_iter, verbose) 
     runtime = time.time() - runtime
 
     # Compile results into a dictionary
     result = {
-        'iC': iC,
-        'C': C,
+        'iC': X,
+        'C': W,
         'X': X,
         'W': W,
         'runtime': runtime
     }
     return SimpleNamespace(**result)
 
+def compute_aquic(Y,c=None,gamma=None,k=None,tol=1e-4,max_iter=100,verbose=0):
+
+    p,n = Y.shape
+
+    if c is None:
+        c = 30
+    else:
+        c=c
+    c = np.clip(c,1,p/2-1)
+    
+    # Compute r from c
+    r = p/2. * (1. - sp.special.erf( 2. * sp.special.erfinv(1. - c/p)))
+
+    if gamma is None:
+        gamma = r/p
+    else:
+        gamma = gamma
+    gamma = np.clip(gamma, 1e-12, 0.5 - 1e-12)
+
+    if k is None:
+        k = n/2
+    k = np.clip(k,1,n)
+
+    runtime = time.time()
+
+    Y = np.array(np.ascontiguousarray(Y, dtype=np.float64),order='F')
+
+    X, W = quic_pybind.AQUIC(Y, k, gamma, tol, max_iter, verbose) 
+    runtime = time.time() - runtime
+
+    # Compile results into a dictionary
+    result = {
+        'iC': X,
+        'C': W,
+        'X': X,
+        'W': W,
+        'runtime': runtime
+    }
+    return SimpleNamespace(**result)
 
 def compute_tiger(Y):
 
