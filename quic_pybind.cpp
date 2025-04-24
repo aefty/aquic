@@ -84,7 +84,6 @@ double erfinv(double x) {
  return boost::math::erf_inv(x);
 }
 
-
 double trace(const MAT_DN& A) {
     return A.diagonal().sum();
 }
@@ -165,11 +164,11 @@ std::tuple<
     // Scaling Matrics
     VEC_DN  scale_cov_cor = (1.0 / std.array()).matrix(); // scale_cov_cor.asDiagonal()   * C    * scale_cov_cor.asDiagonal()   = Cor
     VEC_DN& scale_cor_cov = std;                          // scale_cor_cov.asDiagonal()   * Cor  * scale_cor_cov.asDiagonal()   = C
-    VEC_DN& scale_icor_icov = scale_cov_cor;                // scale_icor_icov.asDiagonal() * iCor * scale_icor_icov.asDiagonal() = iCov
+    VEC_DN& scale_icor_icov = scale_cov_cor;              // scale_icor_icov.asDiagonal() * iCor * scale_icor_icov.asDiagonal() = iCov
 
     if (verbose > 0) {
         std::cout << "\n#######################################"
-            << "\n## MQUIC Solver Configuration"
+            << "\n## AQUIC Solver Configuration"
             << "\n#######################################"
             << "\n Y_array shape   : (" << p << ", " << n << ")"
             << "\n k               : " << k
@@ -232,7 +231,6 @@ std::tuple<
     return  std::make_tuple(X_array, W_array);
 }
 
-
 PYBIND11_MODULE(quic_pybind, m) {
-    m.def("AQUIC", &AQUIC, "get low rank");
+    m.def("AQUIC", &AQUIC, "Adaptive Quadratic Inverse Covariance Matrix Estimation");
 };
