@@ -42,43 +42,43 @@ extern "C" {
         uint32_t* iter, double* dGap, double* neg_logdetX_trSX);
 };
 
-double erfinv_approx(double x) {
-    double w, p;
-    double sign;
-    if (x >= 0) {
-        sign = 1.0;
-    }
-    else {
-        sign = -1.0;
-        x = abs(x);
-    }
-    w = -log((1.0 - x) * (1.0 + x));
-    if (w < 5.0) {
-        w = w - 2.5;
-        p = 2.81022636e-08;
-        p = 3.43273939e-07 + p * w;
-        p = -3.5233877e-06 + p * w;
-        p = -4.39150654e-06 + p * w;
-        p = 0.00021858087 + p * w;
-        p = -0.00125372503 + p * w;
-        p = -0.00417768164 + p * w;
-        p = 0.246640727 + p * w;
-        p = 1.50140941 + p * w;
-    }
-    else {
-        w = sqrt(w) - 3.000000;
-        p = -0.000200214257;
-        p = 0.000100950558 + p * w;
-        p = 0.00134934322 + p * w;
-        p = -0.00367342844 + p * w;
-        p = 0.00573950773 + p * w;
-        p = -0.0076224613 + p * w;
-        p = 0.00943887047 + p * w;
-        p = 1.00167406 + p * w;
-        p = 2.83297682 + p * w;
-    }
-    return sign * p * x;
-}
+// double erfinv_approx(double x) {
+//     double w, p;
+//     double sign;
+//     if (x >= 0) {
+//         sign = 1.0;
+//     }
+//     else {
+//         sign = -1.0;
+//         x = abs(x);
+//     }
+//     w = -log((1.0 - x) * (1.0 + x));
+//     if (w < 5.0) {
+//         w = w - 2.5;
+//         p = 2.81022636e-08;
+//         p = 3.43273939e-07 + p * w;
+//         p = -3.5233877e-06 + p * w;
+//         p = -4.39150654e-06 + p * w;
+//         p = 0.00021858087 + p * w;
+//         p = -0.00125372503 + p * w;
+//         p = -0.00417768164 + p * w;
+//         p = 0.246640727 + p * w;
+//         p = 1.50140941 + p * w;
+//     }
+//     else {
+//         w = sqrt(w) - 3.000000;
+//         p = -0.000200214257;
+//         p = 0.000100950558 + p * w;
+//         p = 0.00134934322 + p * w;
+//         p = -0.00367342844 + p * w;
+//         p = 0.00573950773 + p * w;
+//         p = -0.0076224613 + p * w;
+//         p = 0.00943887047 + p * w;
+//         p = 1.00167406 + p * w;
+//         p = 2.83297682 + p * w;
+//     }
+//     return sign * p * x;
+// }
 
 double erfinv(double x) {
  return boost::math::erf_inv(x);
@@ -96,6 +96,34 @@ bool is_symmetric(const MAT_DN& A) {
     return A.isApprox(A.transpose());
 }
 
+void threshold(MAT_DN_MAP& X, double tol) {
+    const size_t p = X.rows();
+    assert(X.cols() == p && "Matrix must be square");
+
+    // 1) Precompute invd[i] = 1 / sqrt(X_ii)
+    VEC_DN invd = X.diagonal().array().sqrt().cwiseInverse();
+
+    // 2) Column-by-column in-place pass (serial)
+    for (size_t j = 0; j < p; ++j) {
+        // Obtain a modifiable Array view of column j
+        auto col_j = X.col(j).array();
+
+        // 2a) Build normalized magnitudes:
+        //     scaled[i] = |X_ij| * invd[j] * invd[i]
+        Eigen::ArrayXd scaled = col_j.abs() * invd[j];
+        scaled *= invd.array();           // ← use invd.array() for element-wise
+
+        // 2b) Protect the diagonal entry from zeroing
+        scaled[j] = tol + 1.0;
+
+        // 2c) Build a 0/1 mask: 1 => drop below tol, 0 => keep
+        Eigen::ArrayXd mask = (scaled < tol).template cast<double>();
+
+        // 2d) Zero-out both X_ij and X_ji symmetrically
+        col_j         *= (1.0 - mask);
+        X.row(j).array() *= (1.0 - mask).transpose();
+    }
+}
 
 std::tuple<MAT_DN, VEC_DN> compute_S(MAT_DN_MAP& Y, const std::string& mode = "corr", const bool bias = true) {
 
@@ -213,8 +241,16 @@ std::tuple<
         if (_iter[0] < 0 || std::isnan(_neg_logdetX_trSX[0])) std::make_tuple(INF, INF,0,0,0);
 
         // drop small values
-        W = (W.array().abs() >= EPSILON).select(W, 0.0);
-        X = (X.array().abs() >= EPSILON).select(X, 0.0);
+        double EPSILON_loc = std::sqrt(tol);
+        //W = (W.array().abs() >= EPSILON_loc).select(W, 0.0);
+        //X = (X.array().abs() >= EPSILON_loc).select(X, 0.0);
+        
+        threshold(X, EPSILON_loc);
+        threshold(W, EPSILON_loc);
+
+        // std::cout<< "X :\n" << X << std::endl;
+        // std::cout<< "W :\n" << W << std::endl;
+
 
         double X_nnzpr = double((X.array() != 0.0).count())/double(p);
         double W_nnzpr = double((W.array() != 0.0).count())/double(p);
@@ -222,7 +258,7 @@ std::tuple<
         return std::make_tuple(_neg_logdetX_trSX[0], _opt[0],size_t(_iter[0]),X_nnzpr,W_nnzpr);
     };
 
-    auto result   = glasso_call(k);
+    auto result = glasso_call(k);
 
     // Scale back output 
     X = scale_icor_icov.asDiagonal() * X * scale_icor_icov.asDiagonal();

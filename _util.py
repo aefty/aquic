@@ -1,7 +1,18 @@
+import quic_pybind
+from rpy2.robjects import numpy2ri
+import rpy2.robjects as robjects
+from gglasso.problem import glasso_problem
+from types import SimpleNamespace
+from sklearn.covariance import LedoitWolf
+from sklearn.covariance import GraphicalLassoCV, GraphicalLasso
+import networkx as nx
+import pandas as pd
+import scipy as sp
+import numpy as np
 import os
 import sys
 import time
-import copy 
+import copy
 
 import warnings
 from sklearn.exceptions import ConvergenceWarning
@@ -12,127 +23,118 @@ warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
-import numpy as np
-import scipy as sp
-import pandas as pd
-import networkx as nx
 
-from sklearn.covariance import GraphicalLassoCV, GraphicalLasso
-from sklearn.covariance import LedoitWolf
-from types import SimpleNamespace
-
-from gglasso.problem import glasso_problem
-
-import rpy2.robjects as robjects
-from rpy2.robjects import numpy2ri
 numpy2ri.activate()
 
-import quic_pybind
 
-def make_cov(p, data_type,dense=False,seed=1):
+def make_cov(p, data_type, seed=1):
 
     np.random.seed(seed)
 
     r = robjects.r
-    r.assign("p", p)  
-    r.assign("seed_rng", seed)  
+    r.assign("p", p)
+    r.assign("seed_rng", seed)
 
-    if data_type=="random":
-      
+    if data_type == "random":
+
         timed_result = r('''
             library(huge)
             set.seed(seed_rng);
             system.time({
             suppressMessages(suppressWarnings({
-                out <- huge.generator(n = 2, d = p, graph = "random", verbose = FALSE)
-            }))    
+                out <- huge.generator(n = 2, d = p,
+                                      graph = "random", verbose = FALSE)
+            }))
             })
         ''')
-    elif data_type=="hub":
+    elif data_type == "hub":
 
         timed_result = r('''
             library(huge)
             set.seed(seed_rng)
             system.time({
             suppressMessages(suppressWarnings({
-                out <- huge.generator(n = 2, d = p, graph = "hub", verbose = FALSE)
-            }))    
+                out <- huge.generator(n = 2, d = p,
+                                      graph = "hub", verbose = FALSE)
+            }))
             })
         ''')
 
-    elif data_type=="cluster":
+    elif data_type == "cluster":
 
         timed_result = r('''
             library(huge)
             set.seed(seed_rng)
             system.time({
             suppressMessages(suppressWarnings({
-                out <- huge.generator(n = 2, d = p, graph = "cluster", verbose = FALSE)
-            }))    
+                out <- huge.generator(n = 2, d = p,
+                                      graph = "cluster", verbose = FALSE)
+            }))
             })
         ''')
-    elif data_type=="band":
-
-        timed_result = r('''
-            library(huge)
-            set.seed(seed_rng)             
-            system.time({
-            suppressMessages(suppressWarnings({
-                out <- huge.generator(n = 2, d = p, graph = "band", verbose = FALSE)
-            }))    
-            })
-        ''')
-    elif data_type=="sf":
+    elif data_type == "band":
 
         timed_result = r('''
             library(huge)
             set.seed(seed_rng)
             system.time({
             suppressMessages(suppressWarnings({
-                out <- huge.generator(n = 2, d = p, graph = "scale-free", verbose = FALSE)
-            }))    
+                out <- huge.generator(n = 2, d = p,
+                                      graph = "band", verbose = FALSE)
+            }))
+            })
+        ''')
+    elif data_type == "sf":
+
+        timed_result = r('''
+            library(huge)
+            set.seed(seed_rng)
+            system.time({
+            suppressMessages(suppressWarnings({
+                out <- huge.generator(n = 2, d = p,
+                                      graph = "scale-free", verbose = FALSE)
+            }))
             })
         ''')
     else:
         raise ValueError("Invalid mode. Choose from 'diag', or 'pca'.")
 
-    temp  = r['out'].rx2('omega')
+    temp = r['out'].rx2('omega')
 
-    iC = np.round(np.array(temp),12) 
-    C  = np.linalg.inv(iC)
+    iC = np.round(np.array(temp), 12)
+    C = np.linalg.inv(iC)
 
-    if dense is True:
-        uCu = np.sum(C)
-        iC += uCu
-        C = np.linalg.inv(iC)
+    return iC, C
 
-    return iC,C
 
-def make_samples(cov,mean=None,n=None,df=np.inf,seed=0):
+def make_samples(cov, mean=None, n=None, df=np.inf, seed=0):
     if mean is None:
         mean = np.zeros(cov.shape[0])
     if n is None:
-        n=100
-    Y = sp.stats.multivariate_t.rvs(loc=mean, shape=cov, df=df, size=n,random_state=seed).T
+        n = 100
+    Y = sp.stats.multivariate_t.rvs(
+        loc=mean, shape=cov, df=df, size=n, random_state=seed).T
 
     return Y
 
+
 def normalize_data(Y):
     sd = Y.std(axis=1, keepdims=True)
-    D  = np.diag(1.0 / sd.flatten())
+    D = np.diag(1.0 / sd.flatten())
     iD = np.diag(sd.flatten())
-    Y  = D @ (Y - Y.mean(axis=1, keepdims=True))  # Normalized Y
+    Y = D @ (Y - Y.mean(axis=1, keepdims=True))  # Normalized Y
 
-    return Y,D,iD
+    return Y, D, iD
+
 
 def compute_scov(Y):
 
-    p,n = Y.shape
+    p, n = Y.shape
     runtime = time.time()
 
-    C = np.cov(Y,bias=False)
+    C = np.cov(Y, bias=False)
 
-    if n>p:
+    if n > p:
         iC = np.linalg.inv(C)
     else:
         iC = np.linalg.pinv(C)
@@ -147,9 +149,10 @@ def compute_scov(Y):
     }
     return SimpleNamespace(**result)
 
+
 def compute_ledoit(Y):
     runtime = time.time()
-    
+
     res = LedoitWolf(store_precision=True).fit(Y.T)
     C = res.covariance_
     iC = res.precision_
@@ -167,28 +170,31 @@ def compute_ledoit(Y):
     return SimpleNamespace(**result)
 
 
-def compute_aquic_test(Y,k=None,c=None,tol=1e-4,max_iter=100,verbose=0):
+def compute_aquic(Y, c=None, gamma=None, k=None, tol=1e-3, max_iter=100, verbose=0):
 
-    p,n = Y.shape
+    p, n = Y.shape
 
     # Set default for c if not provided
+    c_max = (2/3) * (p-1)
     if c is None:
-        c = 10.0
-        if c>=p:
-            c = p - 0.5
+        c = 40.0
+    c = np.clip(c, 1, c_max-1)
 
-    gamma = (1 - sp.special.erf(2 * sp.special.erfinv(1 - c / p))) / 2
-    gamma = np.clip(gamma, 1e-12, 0.5 - 1e-12)
+    gamma = 0.5*(1. - sp.special.erf(2. *
+                 sp.special.erfinv(1. - c / (2. * (p-c-1.)))))
+    gamma = np.clip(gamma, 1e-10, 0.5 - 1e-6)
 
     if k is None:
         k = n/2
-    k = np.clip(k,1,n)
+    k = np.clip(k, 1, n)
+
+    print(f"- gamma: {gamma}, c: {c}, k: {k}, p: {p}, n: {n}")
 
     runtime = time.time()
 
-    Y = np.array(np.ascontiguousarray(Y, dtype=np.float64),order='F')
+    Y = np.array(np.ascontiguousarray(Y, dtype=np.float64), order='F')
 
-    X, W = quic_pybind.AQUIC(Y, k, gamma, tol, max_iter, verbose) 
+    X, W = quic_pybind.AQUIC(Y, k, gamma, tol, max_iter, verbose)
     runtime = time.time() - runtime
 
     # Compile results into a dictionary
@@ -201,45 +207,6 @@ def compute_aquic_test(Y,k=None,c=None,tol=1e-4,max_iter=100,verbose=0):
     }
     return SimpleNamespace(**result)
 
-def compute_aquic(Y,c=None,gamma=None,k=None,tol=1e-4,max_iter=100,verbose=0):
-
-    p,n = Y.shape
-
-    if c is None:
-        c = 30
-    else:
-        c=c
-    c = np.clip(c,1,p/2-1)
-    
-    # Compute r from c
-    r = p/2. * (1. - sp.special.erf( 2. * sp.special.erfinv(1. - c/p)))
-
-    if gamma is None:
-        gamma = r/p
-    else:
-        gamma = gamma
-    gamma = np.clip(gamma, 1e-12, 0.5 - 1e-12)
-
-    if k is None:
-        k = n/2
-    k = np.clip(k,1,n)
-
-    runtime = time.time()
-
-    Y = np.array(np.ascontiguousarray(Y, dtype=np.float64),order='F')
-
-    X, W = quic_pybind.AQUIC(Y, k, gamma, tol, max_iter, verbose) 
-    runtime = time.time() - runtime
-
-    # Compile results into a dictionary
-    result = {
-        'iC': X,
-        'C': W,
-        'X': X,
-        'W': W,
-        'runtime': runtime
-    }
-    return SimpleNamespace(**result)
 
 def compute_tiger(Y):
 
@@ -247,7 +214,7 @@ def compute_tiger(Y):
     # Set maximum number of iterations and tolerance for convergence
 
     # Normalize data if specified
-    Y, D ,iD = normalize_data(Y)
+    Y, D, iD = normalize_data(Y)
 
     # Transpose the NumPy array (as you're passing X.T to R)
     Y_T = Y.T
@@ -278,8 +245,8 @@ def compute_tiger(Y):
         ''')
 
         # Extract the timing result from R
-        user_time    = timed_result[0]  # User CPU time
-        system_time  = timed_result[1]  # System CPU time
+        user_time = timed_result[0]  # User CPU time
+        system_time = timed_result[1]  # System CPU time
         elapsed_time = timed_result[2]  # Total elapsed time
 
         # Retrieve the 'out2' object from the R environment and convert to a Python dictionary
@@ -290,23 +257,23 @@ def compute_tiger(Y):
 
         # De-normalize inverse covariance matrix if normalization was applied
         iC = D @ iC @ D
-        C  = np.linalg.pinv(iC)
+        C = np.linalg.pinv(iC)
 
     except:
         iC = np.eye(p) * np.nan
-        C  = np.eye(p) * np.nan
-        l  = np.nan
+        C = np.eye(p) * np.nan
+        l = np.nan
         elapsed_time = np.nan
-
 
     # Compile results into a dictionary
     result = {
         'iC': copy.deepcopy(iC),
-        'C' : copy.deepcopy(C),
+        'C': copy.deepcopy(C),
         'l': l,
         'runtime': elapsed_time
-        }
+    }
     return SimpleNamespace(**result)
+
 
 def compute_clime(Y):
 
@@ -314,13 +281,13 @@ def compute_clime(Y):
     # Set maximum number of iterations and tolerance for convergence
 
     # Normalize data if specified
-    Y, D ,iD = normalize_data(Y)
+    Y, D, iD = normalize_data(Y)
 
     # Transpose the NumPy array (as you're passing X.T to R)
     Y_T = Y.T
 
     try:
-        elapsed_time=0
+        elapsed_time = 0
         # Import R base and 'flare' library
         r = robjects.r
 
@@ -329,7 +296,7 @@ def compute_clime(Y):
 
         # Assign the transposed data to a variable in the R environment
         r.assign("D_data", Y_T)
-            
+
         # Now use `D_data` in the R environment and run `sugm`
         # Using R's system.time() to time the execution of the sugm function
         timed_result = r('''
@@ -344,8 +311,8 @@ def compute_clime(Y):
         ''')
 
         # Extract the timing result from R
-        user_time    = timed_result[0]  # User CPU time
-        system_time  = timed_result[1]  # System CPU time
+        user_time = timed_result[0]  # User CPU time
+        system_time = timed_result[1]  # System CPU time
         elapsed_time = timed_result[2]  # Total elapsed time
 
         # Retrieve the 'out2' object from the R environment and convert to a Python dictionary
@@ -356,29 +323,29 @@ def compute_clime(Y):
 
         # De-normalize inverse covariance matrix if normalization was applied
         iC = D @ iC @ D
-        C  = np.linalg.pinv(iC)
+        C = np.linalg.pinv(iC)
     except:
         iC = np.eye(p) * np.nan
-        C  = np.eye(p) * np.nan
-        l  = np.nan
+        C = np.eye(p) * np.nan
+        l = np.nan
         elapsed_time = np.nan
 
     # Compile results into a dictionary
     result = {
         'iC': copy.deepcopy(iC),
-        'C' : copy.deepcopy(C),
+        'C': copy.deepcopy(C),
         'l': l,
         'runtime': elapsed_time
-        }
+    }
     return SimpleNamespace(**result)
+
 
 def compute_glasso(Y):
 
     p, n = Y.shape
 
     # Normalize data if specified
-    Y,D,iD= normalize_data(Y)
-
+    Y, D, iD = normalize_data(Y)
 
     try:
         runtime = time.time()
@@ -387,24 +354,23 @@ def compute_glasso(Y):
             warnings.simplefilter("ignore", category=UserWarning)
             warnings.simplefilter("ignore", category=ConvergenceWarning)
             warnings.simplefilter("ignore", category=RuntimeWarning)
-            
+
             # Initialize GraphicalLassoCV
-            model = GraphicalLassoCV(n_jobs=-1,tol=1e-4,max_iter=100)
+            model = GraphicalLassoCV(n_jobs=-1, tol=1e-4, max_iter=100)
             model.fit(Y.T)  # Fit the model on transposed data
-        
+
         iC = model.precision_
         C = model.covariance_
 
-
         # De-normalize inverse covariance matrix if normalization was applied
         iC = D @ iC @ D
-        C  = iD @ C @ iD
+        C = iD @ C @ iD
         l = model.alpha_
         runtime = time.time() - runtime
     except:
         iC = np.eye(p) * np.nan
-        C  = np.eye(p) * np.nan
-        l  = np.nan
+        C = np.eye(p) * np.nan
+        l = np.nan
         runtime = np.nan
 
     # Compile results into a dictionary
@@ -416,11 +382,12 @@ def compute_glasso(Y):
     }
     return SimpleNamespace(**result)
 
+
 def compute_glasso_rho(Y, rho):
     p, n = Y.shape
 
     # Normalize data if specified
-    Y,D,iD= normalize_data(Y)
+    Y, D, iD = normalize_data(Y)
 
     start_time = time.time()
 
@@ -430,16 +397,16 @@ def compute_glasso_rho(Y, rho):
         warnings.simplefilter("ignore", category=RuntimeWarning)
 
         # Initialize GraphicalLasso with the provided tuning parameter 'rho'
-        model = GraphicalLasso(alpha=rho,tol=1e-4,max_iter=100)
+        model = GraphicalLasso(alpha=rho, tol=1e-4, max_iter=100)
         model.fit(Y.T)  # Fit the model on the transposed data
-        
+
     iC = model.precision_
     C = model.covariance_
     runtime = time.time() - start_time
 
     # De-normalize inverse covariance matrix if normalization was applied
     iC = D @ iC @ D
-    C  = iD @ C @ iD
+    C = iD @ C @ iD
 
     # Compile results into a dictionary
     result = {
