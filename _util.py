@@ -112,8 +112,11 @@ def make_samples(cov, mean=None, n=None, df=np.inf, seed=0):
         mean = np.zeros(cov.shape[0])
     if n is None:
         n = 100
+
+    rng = np.random.default_rng(seed)  # Create a reproducible generator
+
     Y = sp.stats.multivariate_t.rvs(
-        loc=mean, shape=cov, df=df, size=n, random_state=seed).T
+        loc=mean, shape=cov, df=df, size=n, random_state=rng).T
 
     return Y
 
@@ -175,20 +178,21 @@ def compute_aquic(Y, c=None, gamma=None, k=None, tol=1e-3, max_iter=100, verbose
     p, n = Y.shape
 
     # Set default for c if not provided
-    c_max = (2/3) * (p-1)
+    c_max = (p-1)/2.
     if c is None:
-        c = 40.0
+        c = 64.
     c = np.clip(c, 1, c_max-1)
 
-    gamma = 0.5*(1. - sp.special.erf(2. *
-                 sp.special.erfinv(1. - c / (2. * (p-c-1.)))))
-    gamma = np.clip(gamma, 1e-10, 0.5 - 1e-6)
+    if gamma is None:
+        val = 1. - c / (2. * (p-c-1.))
+        gamma = 0.5 * (1. - sp.special.erf(2. * sp.special.erfinv(val)))
+    else:
+        gamma = gamma
+    gamma = np.clip(gamma, 1e-16, 0.5 - 1e-16)
 
     if k is None:
         k = n/2
     k = np.clip(k, 1, n)
-
-    print(f"- gamma: {gamma}, c: {c}, k: {k}, p: {p}, n: {n}")
 
     runtime = time.time()
 
@@ -196,6 +200,8 @@ def compute_aquic(Y, c=None, gamma=None, k=None, tol=1e-3, max_iter=100, verbose
 
     X, W = quic_pybind.AQUIC(Y, k, gamma, tol, max_iter, verbose)
     runtime = time.time() - runtime
+
+    print(f"- gamma: {gamma}, c: {c}, k: {k}, p: {p}, n: {n} nnzpriC: {np.count_nonzero(X)/p} gamma_tol: {min(gamma, np.abs(gamma-1/2))}")
 
     # Compile results into a dictionary
     result = {
