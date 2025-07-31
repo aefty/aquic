@@ -173,7 +173,7 @@ def compute_ledoit(Y):
     return SimpleNamespace(**result)
 
 
-def compute_aquic(Y, c=None, gamma=None, k=None, tol=1e-3, max_iter=100, verbose=0):
+def compute_aquic(Y, c=None, gamma=None, k=None, tol=1e-3, max_iter=100, verbose=0, clip_gamma=True):
 
     p, n = Y.shape
 
@@ -188,7 +188,11 @@ def compute_aquic(Y, c=None, gamma=None, k=None, tol=1e-3, max_iter=100, verbose
         gamma = 0.5 * (1. - sp.special.erf(2. * sp.special.erfinv(val)))
     else:
         gamma = gamma
-    gamma = np.clip(gamma, 1e-16, 0.5 - 1e-16)
+
+    if clip_gamma == True:
+        gamma = np.clip(gamma, 1e-16, 0.5 - 1e-16)
+    else:
+        print(f'Gamma is set as is !! {gamma}')
 
     if k is None:
         k = n/2
