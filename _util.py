@@ -173,7 +173,7 @@ def compute_ledoit(Y):
     return SimpleNamespace(**result)
 
 
-def compute_aquic(Y, c=None, gamma=None, k=None, tol=1e-3, max_iter=100, verbose=0, clip_gamma=True):
+def compute_aquic(Y, c=None, gamma=None, k=None, tol=1e-3, max_iter=100, L_ii=1e-6, verbose=0, clip_gamma=True):
 
     p, n = Y.shape
 
@@ -202,7 +202,7 @@ def compute_aquic(Y, c=None, gamma=None, k=None, tol=1e-3, max_iter=100, verbose
 
     Y = np.array(np.ascontiguousarray(Y, dtype=np.float64), order='F')
 
-    X, W = quic_pybind.AQUIC(Y, k, gamma, tol, max_iter, verbose)
+    X, W = quic_pybind.AQUIC(Y, k, gamma, tol, max_iter, L_ii, verbose)
     runtime = time.time() - runtime
 
     print(f"- gamma: {gamma}, c: {c}, k: {k}, p: {p}, n: {n} nnzpriC: {np.count_nonzero(X)/p} gamma_tol: {min(gamma, np.abs(gamma-1/2))}")
