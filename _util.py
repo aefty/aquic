@@ -202,10 +202,20 @@ def compute_aquic(Y, c=None, gamma=None, k=None, tol=1e-3, max_iter=100, L_ii=1e
 
     Y = np.array(np.ascontiguousarray(Y, dtype=np.float64), order='F')
 
-    X, W = quic_pybind.AQUIC(Y, k, gamma, tol, max_iter, L_ii, verbose)
+    # X, W = quic_pybind.AQUIC(Y, k, gamma, tol, max_iter, L_ii, verbose)
+
+    X, W = quic_pybind.AQUIC(Y,
+                             float(k),          # C++ double
+                             float(gamma),      # C++ double
+                             float(tol),        # C++ double
+                             int(max_iter),
+                             float(L_ii),       # C++ double
+                             int(verbose)       # C++ int
+                             )
+
     runtime = time.time() - runtime
 
-    print(f"- gamma: {gamma}, c: {c}, k: {k}, p: {p}, n: {n} nnzpriC: {np.count_nonzero(X)/p}  |iC|/p: {np.linalg.norm(X, ord='fro')/p} ")
+    print(f"- gamma: {gamma}, c: {c}, k: {k}, p: {p}, n: {n} nnzpriC: {np.count_nonzero(X)/p}  ||iC||: {np.linalg.norm(X, ord='fro')} ||C||: {np.linalg.norm(W, ord='fro')} ")
 
     # Compile results into a dictionary
     result = {

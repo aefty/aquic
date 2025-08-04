@@ -9,6 +9,9 @@
 
 #define VERSION "1.2"
 
+#include <random> // for std::mt19937_64, std::uniform_int_distribution
+static thread_local std::mt19937_64 quic_rng{1};
+
 #include <math.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -270,9 +273,7 @@ extern "C" void QUIC(char mode, uint32_t &p, const double *S, double *Lambda0,
 	}
 
 	double timeBegin = clock();
-
 	srand(1);
-
 	unsigned long maxNewtonIter = maxIter;
 	double cdSweepTol = 0.05;
 	unsigned long max_lineiter = 20;

@@ -5,7 +5,6 @@
 #include <iostream>
 #include <functional>
 #include <cmath>
-#include <thread> // Required for sleep_for
 #include <chrono> // Required for duration literals
 
 #include <pybind11/pybind11.h>
@@ -15,6 +14,8 @@
 
 #include <boost/math/special_functions/erf.hpp>
 #include "eigen-3.4.0/Eigen/Dense"
+
+#define EIGEN_DONT_PARALLELIZE
 
 #define EPSILON std::sqrt(std::numeric_limits<double>::epsilon())
 #define INF std::numeric_limits<double>::infinity()
@@ -132,6 +133,7 @@ void threshold(MAT_DN_MAP &X, double tol)
     }
 }
 
+#include <cstdlib>
 std::tuple<MAT_DN, VEC_DN> compute_S(MAT_DN_MAP &Y, const std::string &mode = "corr", const bool bias = true)
 {
 
@@ -251,6 +253,8 @@ AQUIC(
         double _tol = tol;
         uint32_t _max_iter = max_iter;
         int32_t _verbose = std::max(0, verbose - 1);
+
+        // srand(1);
         QUIC(_mode, _p, S.data(), L.data(), _path_len, _path, _tol, _verbose, _max_iter, X.data(), W.data(), _opt, _cputime, _iter, _dGap, _neg_logdetX_trSX);
 
         // Catch if something went wrong.
