@@ -180,7 +180,7 @@ def compute_aquic(Y, c=None, gamma=None, k=None, tol=1e-3, max_iter=100, verbose
     # Set default for c if not provided
     c_max = (p-1)/2.
     if c is None:
-        c = 64.
+        c = 30.
     c = np.clip(c, 1, c_max-1)
 
     if gamma is None:
