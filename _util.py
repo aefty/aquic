@@ -205,7 +205,7 @@ def compute_aquic(Y, c=None, gamma=None, k=None, tol=1e-3, max_iter=100, L_ii=1e
     X, W = quic_pybind.AQUIC(Y, k, gamma, tol, max_iter, L_ii, verbose)
     runtime = time.time() - runtime
 
-    print(f"- gamma: {gamma}, c: {c}, k: {k}, p: {p}, n: {n} nnzpriC: {np.count_nonzero(X)/p} gamma_tol: {min(gamma, np.abs(gamma-1/2))}")
+    print(f"- gamma: {gamma}, c: {c}, k: {k}, p: {p}, n: {n} nnzpriC: {np.count_nonzero(X)/p}  |iC|/p: {np.linalg.norm(X, ord='fro')/p} ")
 
     # Compile results into a dictionary
     result = {
