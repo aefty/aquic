@@ -9,9 +9,6 @@
 
 #define VERSION "1.2"
 
-#include <random> // for std::mt19937_64, std::uniform_int_distribution
-static thread_local std::mt19937_64 quic_rng{1};
-
 #include <math.h>
 #include <stddef.h>
 #include <stdio.h>
