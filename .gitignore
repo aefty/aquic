@@ -172,5 +172,5 @@ cython_debug/
 .pypirc
 
 .DS_Store
-*.o
+# *.o
 __pycache__/*
