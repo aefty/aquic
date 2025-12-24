@@ -2,7 +2,7 @@
 
 # Compiler
 CC = g++
-CFLAGS = -O2 -Wall -std=c++23 -fPIC -Xpreprocessor -fopenmp -I/opt/homebrew/opt/libomp/include \
+CFLAGS = -O3 -Wall -std=c++23 -fPIC -Xpreprocessor -fopenmp -I/opt/homebrew/opt/libomp/include \
         -L/opt/homebrew/opt/libomp/lib -lomp 
 
 PYTHON = python3.12
