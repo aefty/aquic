@@ -14,6 +14,8 @@ import sys
 import time
 import copy
 
+from _QUICGraphicalLassoCV import QUICGraphicalLassoCV
+
 import warnings
 from sklearn.exceptions import ConvergenceWarning
 
@@ -23,9 +25,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
-
 numpy2ri.activate()
-
 
 def make_cov(p, data_type, seed=1):
 
@@ -102,10 +102,9 @@ def make_cov(p, data_type, seed=1):
     temp = r['out'].rx2('omega')
 
     iC = np.round(np.array(temp), 12)
-    C = np.linalg.inv(iC)
+    C  = np.linalg.inv(iC)
 
     return iC, C
-
 
 def make_samples(cov, mean=None, n=None, df=np.inf, seed=0):
     if mean is None:
@@ -120,7 +119,6 @@ def make_samples(cov, mean=None, n=None, df=np.inf, seed=0):
 
     return Y
 
-
 def normalize_data(Y):
     sd = Y.std(axis=1, keepdims=True)
     D = np.diag(1.0 / sd.flatten())
@@ -128,7 +126,6 @@ def normalize_data(Y):
     Y = D @ (Y - Y.mean(axis=1, keepdims=True))  # Normalized Y
 
     return Y, D, iD
-
 
 def compute_scov(Y):
 
@@ -152,7 +149,6 @@ def compute_scov(Y):
     }
     return SimpleNamespace(**result)
 
-
 def compute_ledoit(Y):
     runtime = time.time()
 
@@ -172,15 +168,14 @@ def compute_ledoit(Y):
     }
     return SimpleNamespace(**result)
 
-
-def compute_aquic(Y, c=None, gamma=None, k=None, tol=1e-3, max_iter=100, L_ii=1e-12, verbose=0, clip_gamma=True):
+def compute_aquic(Y, c=None, gamma=None, k=None, tol=1e-4, max_iter=100, L_ii=1e-4, verbose=0, clip_gamma=True):
 
     p, n = Y.shape
 
     # Set default for c if not provided
     c_max = np.floor((p-1)/2)
     if c is None:
-        c = 30.
+        c = 30
     c = np.clip(c, 1, c_max-1)
 
     if gamma is None:
@@ -213,7 +208,7 @@ def compute_aquic(Y, c=None, gamma=None, k=None, tol=1e-3, max_iter=100, L_ii=1e
 
     runtime = time.time() - runtime
 
-    print(f"- gamma: {gamma}, c: {c}, k: {k}, p: {p}, n: {n} nnzpriC: {np.count_nonzero(X)/p}  ||iC||: {np.linalg.norm(X, ord='fro')} ||C||: {np.linalg.norm(W, ord='fro')} ")
+    print(f"- gamma: {gamma}, c: {c}, p: {p}, n: {n} n/k: {n/k}, nnzpriC: {np.count_nonzero(X)/p}  ||iC||: {np.linalg.norm(X, ord='fro')} ||C||: {np.linalg.norm(W, ord='fro')} ")
 
     # Compile results into a dictionary
     result = {
@@ -358,7 +353,7 @@ def compute_clime(Y):
     return SimpleNamespace(**result)
 
 
-def compute_glasso(Y):
+def compute_glasso_cv(Y):
 
     p, n = Y.shape
 
@@ -374,7 +369,7 @@ def compute_glasso(Y):
             warnings.simplefilter("ignore", category=RuntimeWarning)
 
             # Initialize GraphicalLassoCV
-            model = GraphicalLassoCV(n_jobs=-1, tol=1e-4, max_iter=100)
+            model = GraphicalLassoCV(n_jobs=8, tol=1e-4, max_iter=100)
             model.fit(Y.T)  # Fit the model on transposed data
 
         iC = model.precision_
@@ -400,6 +395,49 @@ def compute_glasso(Y):
     }
     return SimpleNamespace(**result)
 
+
+
+def compute_quic_cv(Y):
+
+    p, n = Y.shape
+
+    # Normalize data if specified
+    Y, D, iD = normalize_data(Y)
+
+    try:
+        runtime = time.time()
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=UserWarning)
+            warnings.simplefilter("ignore", category=ConvergenceWarning)
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+
+            # Initialize QUICGraphicalLassoCV
+            model = QUICGraphicalLassoCV(n_jobs=8, tol=1e-4, max_iter=100)
+            model.fit(Y.T)  # Fit the model on transposed data
+
+        iC = model.precision_
+        C = model.covariance_
+
+        # De-normalize inverse covariance matrix if normalization was applied
+        iC = D @ iC @ D
+        C = iD @ C @ iD
+        l = model.alpha_
+        runtime = time.time() - runtime
+    except:
+        iC = np.eye(p) * np.nan
+        C = np.eye(p) * np.nan
+        l = np.nan
+        runtime = np.nan
+
+    # Compile results into a dictionary
+    result = {
+        'iC': copy.deepcopy(iC),
+        'C':  copy.deepcopy(C),
+        'l': l,
+        'runtime': runtime
+    }
+    return SimpleNamespace(**result)
 
 def compute_glasso_rho(Y, rho):
     p, n = Y.shape
