@@ -14,7 +14,8 @@ import sys
 import time
 import copy
 
-from _QUICGraphicalLassoCV import QUICGraphicalLassoCV
+
+import QUICGraphicalLassoCV
 
 import warnings
 from sklearn.exceptions import ConvergenceWarning
@@ -168,19 +169,18 @@ def compute_ledoit(Y):
     }
     return SimpleNamespace(**result)
 
-def compute_aquic(Y, c=None, gamma=None, k=None, tol=1e-4, max_iter=100, L_ii=1e-6, verbose=0, clip_gamma=True):
+def compute_aquic(Y, c=None, gamma=None, k=None, tol=1e-4, max_iter=100, L_ii=1e-4, verbose=0, clip_gamma=True):
 
     p, n = Y.shape
 
     # Set default for c if not provided
-    c_max = np.floor(p/2)
+    c_max = np.floor((p-1)/2)
     if c is None:
         c = 30
-    c = np.clip(c, 1, c_max)
+    c = np.clip(c, 1, c_max-1)
 
     if gamma is None:
-        #val = 1. - c / (2. * (p-c-1.))
-        val   = 1. - c / p
+        val = 1. - c / (2. * (p-c-1.))
         gamma = 0.5 * (1. - sp.special.erf(2. * sp.special.erfinv(val)))
     else:
         gamma = gamma
@@ -221,60 +221,6 @@ def compute_aquic(Y, c=None, gamma=None, k=None, tol=1e-4, max_iter=100, L_ii=1e
     }
     return SimpleNamespace(**result)
 
-
-
-def compute_aquic_q(Y, c=None, gamma=None, k=None, tol=1e-4, max_iter=100, L_ii=1e-6, verbose=0, clip_gamma=True):
-
-    p, n = Y.shape
-
-    # Set default for c if not provided
-    c_max = np.floor(p/2)
-    if c is None:
-        c = 30
-    c = np.clip(c, 1, c_max)
-
-    if gamma is None:
-        #val = 1. - c / (2. * (p-c-1.))
-        val   = 1. - c / p
-        gamma = 0.5 * (1. - sp.special.erf(2. * sp.special.erfinv(val)))
-    else:
-        gamma = gamma
-
-    if clip_gamma == True:
-        gamma = np.clip(gamma, 1e-16, 0.5 - 1e-16)
-    else:
-        print(f'Gamma is set as is !! {gamma}')
-
-    if k is None:
-        k = n/2
-    k = np.clip(k, 1, n)
-
-    runtime = time.time()
-
-    Y = np.array(np.ascontiguousarray(Y, dtype=np.float64), order='F')
-
-    X, W = quic_pybind.AQUIC_q(Y,
-                             float(k),          # C++ double
-                             float(gamma),      # C++ double
-                             float(tol),        # C++ double
-                             int(max_iter),
-                             float(L_ii),       # C++ double
-                             int(verbose)       # C++ int
-                             )
-
-    runtime = time.time() - runtime
-
-    print(f"- gamma: {gamma}, c: {c}, p: {p}, n: {n} n/k: {n/k}, nnzpriC: {np.count_nonzero(X)/p}  ||iC||: {np.linalg.norm(X, ord='fro')} ||C||: {np.linalg.norm(W, ord='fro')} ")
-
-    # Compile results into a dictionary
-    result = {
-        'iC': X,
-        'C': W,
-        'X': X,
-        'W': W,
-        'runtime': runtime
-    }
-    return SimpleNamespace(**result)
 
 def compute_tiger(Y):
 
@@ -342,6 +288,7 @@ def compute_tiger(Y):
     }
     return SimpleNamespace(**result)
 
+
 def compute_clime(Y):
 
     p, n = Y.shape
@@ -406,7 +353,8 @@ def compute_clime(Y):
     }
     return SimpleNamespace(**result)
 
-def compute_glasso_cv(Y):
+
+def compute_glasso(Y):
 
     p, n = Y.shape
 
@@ -422,7 +370,7 @@ def compute_glasso_cv(Y):
             warnings.simplefilter("ignore", category=RuntimeWarning)
 
             # Initialize GraphicalLassoCV
-            model = GraphicalLassoCV(n_jobs=8, tol=1e-4, max_iter=100)
+            model = GraphicalLassoCV(n_jobs=-1, tol=1e-4, max_iter=100)
             model.fit(Y.T)  # Fit the model on transposed data
 
         iC = model.precision_
@@ -448,7 +396,9 @@ def compute_glasso_cv(Y):
     }
     return SimpleNamespace(**result)
 
-def compute_quic_cv(Y):
+
+
+def compute_quiccv(Y):
 
     p, n = Y.shape
 
@@ -464,7 +414,7 @@ def compute_quic_cv(Y):
             warnings.simplefilter("ignore", category=RuntimeWarning)
 
             # Initialize QUICGraphicalLassoCV
-            model = QUICGraphicalLassoCV(n_jobs=8, tol=1e-4, max_iter=100)
+            model = QUICGraphicalLassoCV(n_jobs=-1, tol=1e-4, max_iter=100)
             model.fit(Y.T)  # Fit the model on transposed data
 
         iC = model.precision_

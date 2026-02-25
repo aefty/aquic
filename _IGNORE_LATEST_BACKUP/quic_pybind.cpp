@@ -249,156 +249,14 @@ AQUIC(
 
     // drop small values
     double EPSILON_loc = std::sqrt(tol);
+    // W = (W.array().abs() >= EPSILON_loc).select(W, 0.0);
+    // X = (X.array().abs() >= EPSILON_loc).select(X, 0.0);
+
     threshold(X, EPSILON_loc);
     threshold(W, EPSILON_loc);
 
-    double X_nnzpr = double((X.array() != 0.0).count()) / double(p);
-    double W_nnzpr = double((W.array() != 0.0).count()) / double(p);
-
-    return std::make_tuple(_neg_logdetX_trSX[0], _opt[0], size_t(_iter[0]), X_nnzpr, W_nnzpr);
-  };
-
-  auto result = glasso_call(k);
-
-  // Scale back output
-  X = scale_icor_icov.asDiagonal() * X * scale_icor_icov.asDiagonal();
-  W = scale_cor_cov.asDiagonal() * W * scale_cor_cov.asDiagonal();
-
-  return std::make_tuple(X_array, W_array);
-}
-
-std::tuple<MAT_DN, MAT_DN, VEC_DN> compute_QS(MAT_DN_MAP& Y, const std::string& mode = "corr", const bool bias = true) {
-
-  if (mode != "cov" && mode != "corr") {
-    throw std::invalid_argument("Invalid mode: use 'cov' or 'corr'");
-  }
-
-  const size_t p = Y.rows();
-  const size_t n = Y.cols();
-  const double N = bias ? double(n) : double(n - 1);
-
-  // Center
-  VEC_DN mean  = Y.rowwise().mean();
-  MAT_DN Y_ctr = Y.colwise() - mean;
-
-  // Row-wise std from covariance of centered data
-  MAT_DN S0      = (Y_ctr * Y_ctr.transpose()) / N;          // covariance of centered data
-  VEC_DN std     = (S0.diagonal().array() + EPSILON).sqrt(); // avoid div-by-0
-  VEC_DN inv_std = (1.0 / std.array()).matrix();
-
-  // Form Z: centered, and if corr-mode, standardized to unit variance
-  MAT_DN Z = Y_ctr;
-  if (mode == "corr") {
-    Z = inv_std.asDiagonal() * Z; // row-wise scaling => Var(Z_i) ~ 1
-  }
-
-  // S computed from Z (so in corr-mode diag(S) ~ 1 by construction)
-  MAT_DN S = (Z * Z.transpose()) / N;
-
-  // Q = E[Z_i^2 Z_j^2] estimated as second moment of squared entries
-  MAT_DN Zsq = Z.array().square().matrix(); // elementwise square
-  MAT_DN Q   = (Zsq * Zsq.transpose()) / N;
-
-  return std::make_tuple(Q, S, std);
-}
-
-std::tuple<
-    py::array_t<double>, // X_array,
-    py::array_t<double>  // W_array,
-    >
-AQUIC_q(
-    py::array_t<double>& Y_array,
-    double               k,
-    double               gamma,
-    double               tol,
-    size_t               max_iter,
-    double               L_ii    = 1e-6,
-    int                  verbose = 1) {
-
-  auto Y_buf = Y_array.request();
-
-  if (Y_buf.ndim != 2)
-    throw std::runtime_error("Error: Y must be a 2D array (p x n)");
-  if (Y_buf.shape[0] <= 2 || Y_buf.shape[1] <= 2)
-    throw std::runtime_error("Error: p and n must be greater than 2");
-  if (L_ii < 0.0)
-    throw std::runtime_error("Error: L_ii must be greater than 0.0");
-
-  size_t p = Y_buf.shape[0];
-  size_t n = Y_buf.shape[1];
-
-  MAT_DN_MAP Y(static_cast<double*>(Y_buf.ptr), p, n);
-
-  py::array_t<double> X_array({p, p});
-  auto                buf_X = X_array.request();
-  MAT_DN_MAP          X(static_cast<double*>(buf_X.ptr), p, p);
-
-  py::array_t<double> W_array({p, p});
-  auto                buf_W = W_array.request();
-  MAT_DN_MAP          W(static_cast<double*>(buf_W.ptr), p, p);
-
-  MAT_DN Q;
-  MAT_DN S;
-  VEC_DN std;
-  std::tie(Q, S, std) = compute_QS(Y, "corr", true);
-
-  // Scaling Matrics
-  VEC_DN  scale_cov_cor   = (1.0 / std.array()).matrix(); // scale_cov_cor.asDiagonal()   * C    * scale_cov_cor.asDiagonal()   = Cor
-  VEC_DN& scale_cor_cov   = std;                          // scale_cor_cov.asDiagonal()   * Cor  * scale_cor_cov.asDiagonal()   = C
-  VEC_DN& scale_icor_icov = scale_cov_cor;                // scale_icor_icov.asDiagonal() * iCor * scale_icor_icov.asDiagonal() = iCov
-
-  if (verbose > 0) {
-    std::cout << "\n#######################################"
-              << "\n## AQUIC_Q Solver Configuration"
-              << "\n#######################################"
-              << "\n Y_array shape   : (" << p << ", " << n << ")"
-              << "\n k               : " << k
-              << "\n gamma           : " << gamma
-              << "\n Tolerance       : " << tol
-              << "\n L_ii            : " << L_ii
-              << "\n Max Iterations  : " << max_iter
-              << "\n Verbosity Level : " << verbose
-              << "\n#######################################\n"
-              << std::flush;
-  }
-
-  // Variance Matrix:V = Q + S^2
-  MAT_DN V      = Q + S.array().square().matrix();
-  MAT_DN L_base = V.array().sqrt(); // sqrt(V) for element-wise sqrt
-
-  MAT_DN L(p, p);
-  X.setIdentity();
-  W.setIdentity();
-
-  std::function<std::tuple<double, double, size_t, double, double>(double)> glasso_call = [&](double _k) {
-    double factor = erfinv(1. - 2. * gamma) / std::sqrt(2. * _k);
-    L             = factor * L_base;
-    L.diagonal().setConstant(L_ii); // Keep diagonal fixed !!
-
-    char         _mode                = 'D';
-    uint32_t     _p                   = p;
-    double       _opt[1]              = {0}; // -log|Θ| + tr(ΘS) + ||Λ ⊙ Θ||_1
-    double       _cputime[1]          = {0};
-    uint32_t     _iter[1]             = {0};
-    double       _dGap[1]             = {0};
-    double       _neg_logdetX_trSX[1] = {0};
-    uint32_t     _path_len            = 1;
-    const double _path[1]             = {1.0};
-    double       _tol                 = tol;
-    uint32_t     _max_iter            = max_iter;
-    int32_t      _verbose             = std::max(0, verbose - 1);
-
-    // srand(1);
-    QUIC(_mode, _p, S.data(), L.data(), _path_len, _path, _tol, _verbose, _max_iter, X.data(), W.data(), _opt, _cputime, _iter, _dGap, _neg_logdetX_trSX);
-
-    // Catch if something went wrong.
-    if (_iter[0] < 0 || std::isnan(_neg_logdetX_trSX[0]))
-      std::make_tuple(INF, INF, 0, 0, 0);
-
-    // drop small values
-    double EPSILON_loc = std::sqrt(tol);
-    threshold(X, EPSILON_loc);
-    threshold(W, EPSILON_loc);
+    // std::cout<< "X :\n" << X << std::endl;
+    // std::cout<< "W :\n" << W << std::endl;
 
     double X_nnzpr = double((X.array() != 0.0).count()) / double(p);
     double W_nnzpr = double((W.array() != 0.0).count()) / double(p);
@@ -505,7 +363,8 @@ QUIC_base(
       std::make_tuple(INF, INF, 0, 0, 0);
 
     // drop small values
-    double EPSILON_loc = 1e-12;
+    double EPSILON_loc = std::sqrt(tol);
+
     threshold(X, EPSILON_loc);
     threshold(W, EPSILON_loc);
 
@@ -525,6 +384,5 @@ QUIC_base(
 }
 PYBIND11_MODULE(quic_pybind, m) {
   m.def("AQUIC", &AQUIC, "Adaptive Quadratic Inverse Covariance Matrix Estimation");
-  m.def("AQUIC_q", &AQUIC_q, "Adaptive-Q Quadratic Inverse Covariance Matrix Estimation");
   m.def("QUIC", &QUIC_base, "Quadratic Inverse Covariance Matrix Estimation");
 }
