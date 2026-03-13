@@ -1,10 +1,15 @@
 import quic_pybind
+
 from rpy2.robjects import numpy2ri
 import rpy2.robjects as robjects
+from rpy2.robjects.conversion import localconverter
+
 from gglasso.problem import glasso_problem
 from types import SimpleNamespace
 from sklearn.covariance import LedoitWolf
 from sklearn.covariance import GraphicalLassoCV, GraphicalLasso
+from sklearn.metrics import precision_score, recall_score, f1_score
+
 import networkx as nx
 import pandas as pd
 import scipy as sp
@@ -25,84 +30,115 @@ warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
-numpy2ri.activate()
+_numpy2ri_converter = numpy2ri.converter
+
+
 
 def make_cov(p, data_type, seed=1):
+    p = int(p)
+    seed = int(seed)
+    elapsed_time = np.nan
 
-    np.random.seed(seed)
+    try:
+        r = robjects.r
+        r('''suppressMessages({library(huge)})''')
 
-    r = robjects.r
-    r.assign("p", p)
-    r.assign("seed_rng", seed)
+        robjects.globalenv["p"] = p
+        robjects.globalenv["seed_rng"] = seed
 
-    if data_type == "random":
+        if data_type == "random":
+            timed_result = r("""
+                system.time({
+                    suppressMessages(suppressWarnings({
+                        set.seed(seed_rng)
+                        out <- huge.generator(
+                            n = 2,
+                            d = p,
+                            graph = "random",
+                            verbose = FALSE
+                        )
+                    }))
+                })
+            """)
 
-        timed_result = r('''
-            library(huge)
-            set.seed(seed_rng);
-            system.time({
-            suppressMessages(suppressWarnings({
-                out <- huge.generator(n = 2, d = p,
-                                      graph = "random", verbose = FALSE)
-            }))
-            })
-        ''')
-    elif data_type == "hub":
+        elif data_type == "hub":
+            timed_result = r("""
+                system.time({
+                    suppressMessages(suppressWarnings({
+                        set.seed(seed_rng)
+                        out <- huge.generator(
+                            n = 2,
+                            d = p,
+                            graph = "hub",
+                            verbose = FALSE
+                        )
+                    }))
+                })
+            """)
 
-        timed_result = r('''
-            library(huge)
-            set.seed(seed_rng)
-            system.time({
-            suppressMessages(suppressWarnings({
-                out <- huge.generator(n = 2, d = p,
-                                      graph = "hub", verbose = FALSE)
-            }))
-            })
-        ''')
+        elif data_type == "cluster":
+            timed_result = r("""
+                system.time({
+                    suppressMessages(suppressWarnings({
+                        set.seed(seed_rng)
+                        out <- huge.generator(
+                            n = 2,
+                            d = p,
+                            graph = "cluster",
+                            verbose = FALSE
+                        )
+                    }))
+                })
+            """)
 
-    elif data_type == "cluster":
+        elif data_type == "band":
+            timed_result = r("""
+                system.time({
+                    suppressMessages(suppressWarnings({
+                        set.seed(seed_rng)
+                        out <- huge.generator(
+                            n = 2,
+                            d = p,
+                            graph = "band",
+                            verbose = FALSE
+                        )
+                    }))
+                })
+            """)
 
-        timed_result = r('''
-            library(huge)
-            set.seed(seed_rng)
-            system.time({
-            suppressMessages(suppressWarnings({
-                out <- huge.generator(n = 2, d = p,
-                                      graph = "cluster", verbose = FALSE)
-            }))
-            })
-        ''')
-    elif data_type == "band":
+        elif data_type == "sf":
+            timed_result = r("""
+                system.time({
+                    suppressMessages(suppressWarnings({
+                        set.seed(seed_rng)
+                        out <- huge.generator(
+                            n = 2,
+                            d = p,
+                            graph = "scale-free",
+                            verbose = FALSE
+                        )
+                    }))
+                })
+            """)
 
-        timed_result = r('''
-            library(huge)
-            set.seed(seed_rng)
-            system.time({
-            suppressMessages(suppressWarnings({
-                out <- huge.generator(n = 2, d = p,
-                                      graph = "band", verbose = FALSE)
-            }))
-            })
-        ''')
-    elif data_type == "sf":
+        else:
+            raise ValueError("Invalid data_type. Choose from 'random', 'hub', 'cluster', 'band', or 'sf'.")
 
-        timed_result = r('''
-            library(huge)
-            set.seed(seed_rng)
-            system.time({
-            suppressMessages(suppressWarnings({
-                out <- huge.generator(n = 2, d = p,
-                                      graph = "scale-free", verbose = FALSE)
-            }))
-            })
-        ''')
-    else:
-        raise ValueError("Invalid mode. Choose from 'diag', or 'pca'.")
+        elapsed_time = float(np.asarray(timed_result)[2])
 
-    temp = r['out'].rx2('omega')
+        with robjects.default_converter.context():
+            out = robjects.globalenv["out"]
+            iC = np.asarray(out.rx2("omega"), dtype=float)
 
-    iC = np.round(np.array(temp), 12)
-    C  = np.linalg.inv(iC)
+        iC = np.round(iC, 12)
+        C = np.linalg.inv(iC)
+
+    except Exception:
+        iC = np.eye(p) * np.nan
+        C = np.eye(p) * np.nan
+        elapsed_time = np.nan
+
+    #print("R runtime: ", elapsed_time)
 
     return iC, C
 
@@ -179,7 +215,6 @@ def compute_aquic(Y, c=None, gamma=None, k=None, tol=1e-4, max_iter=100, L_ii=1e
     c = np.clip(c, 1, c_max)
 
     if gamma is None:
-        #val = 1. - c / (2. * (p-c-1.))
         val   = 1. - c / p
         gamma = 0.5 * (1. - sp.special.erf(2. * sp.special.erfinv(val)))
     else:
@@ -220,8 +255,6 @@ def compute_aquic(Y, c=None, gamma=None, k=None, tol=1e-4, max_iter=100, L_ii=1e
         'runtime': runtime
     }
     return SimpleNamespace(**result)
-
-
 
 def compute_aquic_q(Y, c=None, gamma=None, k=None, tol=1e-4, max_iter=100, L_ii=1e-6, verbose=0, clip_gamma=True):
 
@@ -288,40 +321,37 @@ def compute_tiger(Y):
     Y_T = Y.T
 
     try:
-        elapsed_time = 0
-
         # Import R base and 'flare' library
         r = robjects.r
-
-        # Ensure the 'flare' package is installed and loaded in the R environment
         r('''suppressMessages({library(flare)})''')
-
-        # Assign the transposed data to a variable in the R environment
-        r.assign("D_data", Y_T)
+       
+        with localconverter(robjects.default_converter + numpy2ri.converter):
+            # Assign the transposed data to a variable in the R environment
+            robjects.globalenv["D_data"] = Y_T
 
         # Now use `D_data` in the R environment and run `sugm`
         # Using R's system.time() to time the execution of the sugm function
-        timed_result = r('''
+        timed_result = r("""
             system.time({
-            invisible(capture.output({
-            suppressMessages(suppressWarnings({
-                out <- sugm(D_data, method = "tiger", prec = 1e-4, max.ite = 100)
-                sel <- sugm.select(out, criterion = "cv")
-            }))
-            }))
+                invisible(capture.output({
+                    suppressMessages(suppressWarnings({
+                        out <- sugm(D_data, method = "tiger")
+                        sel <- sugm.select(out, criterion = "cv")
+                    }))
+                }))
             })
-        ''')
+        """)
 
         # Extract the timing result from R
         user_time = timed_result[0]  # User CPU time
         system_time = timed_result[1]  # System CPU time
         elapsed_time = timed_result[2]  # Total elapsed time
 
-        # Retrieve the 'out2' object from the R environment and convert to a Python dictionary
-        out = r['sel']
-
-        iC = np.array(np.array(out.rx2('opt.icov')))
-        l = np.array(np.array(out.rx2('opt.lambda')))
+        # Retrieve the 'out' object from the R environment and convert to a Python dictionary
+        with robjects.default_converter.context():
+            sel = robjects.globalenv["sel"]
+            iC = np.asarray(sel.rx2("opt.icov"), dtype=float)
+            l = np.asarray(sel.rx2("opt.lambda"), dtype=float)[0]
 
         # De-normalize inverse covariance matrix if normalization was applied
         iC = D @ iC @ D
@@ -341,6 +371,8 @@ def compute_tiger(Y):
         'runtime': elapsed_time
     }
     return SimpleNamespace(**result)
+
+
 
 def compute_clime(Y):
 
@@ -354,43 +386,42 @@ def compute_clime(Y):
     Y_T = Y.T
 
     try:
-        elapsed_time = 0
         # Import R base and 'flare' library
         r = robjects.r
-
-        # Ensure the 'flare' package is installed and loaded in the R environment
         r('''suppressMessages({library(flare)})''')
-
-        # Assign the transposed data to a variable in the R environment
-        r.assign("D_data", Y_T)
+       
+        with localconverter(robjects.default_converter + numpy2ri.converter):
+            # Assign the transposed data to a variable in the R environment
+            robjects.globalenv["D_data"] = Y_T
 
         # Now use `D_data` in the R environment and run `sugm`
         # Using R's system.time() to time the execution of the sugm function
-        timed_result = r('''
+        timed_result = r("""
             system.time({
                 invisible(capture.output({
-                suppressMessages(suppressWarnings({
-                out <- sugm(D_data, method = "clime",prec = 1e-4, max.ite = 100);
-                sel <- sugm.select(out, criterion = "cv");
-            }))
-            }))
+                    suppressMessages(suppressWarnings({
+                        out <- sugm(D_data, method = "clime")
+                        sel <- sugm.select(out, criterion = "cv")
+                    }))
+                }))
             })
-        ''')
+        """)
 
         # Extract the timing result from R
         user_time = timed_result[0]  # User CPU time
         system_time = timed_result[1]  # System CPU time
         elapsed_time = timed_result[2]  # Total elapsed time
 
-        # Retrieve the 'out2' object from the R environment and convert to a Python dictionary
-        out = r['sel']
-
-        iC = np.array(np.array(out.rx2('opt.icov')))
-        l = np.array(np.array(out.rx2('opt.lambda')))
+        # Retrieve the 'out' object from the R environment and convert to a Python dictionary
+        with robjects.default_converter.context():
+            sel = robjects.globalenv["sel"]
+            iC = np.asarray(sel.rx2("opt.icov"), dtype=float)
+            l = np.asarray(sel.rx2("opt.lambda"), dtype=float)[0]
 
         # De-normalize inverse covariance matrix if normalization was applied
         iC = D @ iC @ D
         C = np.linalg.pinv(iC)
+
     except:
         iC = np.eye(p) * np.nan
         C = np.eye(p) * np.nan
@@ -405,6 +436,7 @@ def compute_clime(Y):
         'runtime': elapsed_time
     }
     return SimpleNamespace(**result)
+
 
 def compute_glasso_cv(Y):
 
@@ -422,7 +454,7 @@ def compute_glasso_cv(Y):
             warnings.simplefilter("ignore", category=RuntimeWarning)
 
             # Initialize GraphicalLassoCV
-            model = GraphicalLassoCV(n_jobs=8, tol=1e-4, max_iter=100)
+            model = GraphicalLassoCV(n_jobs=8, tol=1e-4, max_iter=100,eps=1e-4)
             model.fit(Y.T)  # Fit the model on transposed data
 
         iC = model.precision_
@@ -523,3 +555,90 @@ def compute_glasso_rho(Y, rho):
         'runtime': runtime
     }
     return SimpleNamespace(**result)
+
+def compute_metrics(result, C_true, iC_true, Y):
+
+    if result is None or np.isnan(np.sum(result.iC)):
+        result_metrics = {
+            'err_C': np.nan,
+            'err_iC': np.nan,
+            'err_S': np.nan,
+            'nnz': np.nan,
+            'nll': np.nan,
+            'sphr': np.nan,
+            'precision': np.nan,
+            'recall': np.nan,
+            'f1': np.nan,
+            'kl': np.nan,
+            'aic':np.nan,
+            'runtime': np.nan
+        }
+        return SimpleNamespace(**result_metrics)
+
+    p, n = Y.shape
+    S   = np.cov(Y, bias=True)
+    C   = result.C #+ np.eye(p) * 1e-6
+    iC  = result.iC #+ np.eye(p) * 1e-6
+    
+    if C_true is None or np.all(np.isnan(C_true)):
+        C_true = np.ones((p, p)) * np.nan
+
+    if iC_true is None or np.all(np.isnan(iC_true)):
+        iC_true = np.ones((p, p)) * np.nan
+
+    # Compute error metrics on covariance/precision matrices
+    err_C  = np.linalg.norm(C  - C_true, ord="fro") / np.linalg.norm(C_true, ord="fro")
+    err_iC = np.linalg.norm(iC - iC_true, ord="fro") / np.linalg.norm(iC_true, ord="fro")
+    err_S  = np.linalg.norm(C  - S, ord="fro")
+    nnz    = (np.count_nonzero(iC)) / p
+    
+    log_det_sign, logdet_iC = np.linalg.slogdet(iC)
+    if log_det_sign <= 0:
+        print("Warning: iC is not SPD.")
+    nll = -1.0 * logdet_iC + np.sum(iC * S)  # sum(iC * S) = trace(iC@C)
+
+    sphr   = p * np.sum(iC * iC) / np.trace(iC)**2 - 1  # sum(iC * iC) = trace(iC@iC)
+    aic    =  nll + nnz/2 + p
+
+    # Compute KL divergence loss for two zero-mean Gaussians.
+    tr_term = float(np.sum(C_true * iC)) # = trace(C_true @ iC )
+    log_det_sign, logdet_prod = np.linalg.slogdet(C_true @ iC)  # should be SPD ⇒ s>0
+    if log_det_sign <= 0:
+        print("Error C_true @ iC is not SPD.")
+    kl = tr_term - logdet_prod - p
+
+    # Compute F1 score for structure recovery of the precision matrix.
+    # Threshold the absolute values to define nonzero connections.
+    mask = np.triu(np.ones((p, p), dtype=bool), k=1)
+
+    # Binarize supports on masked entries
+    y_true = (np.abs(iC_true) > 0)[mask]
+    y_pred = (np.abs(iC) > 0.0)[mask]
+
+    # Counts
+    tp = int(np.count_nonzero(y_pred &  y_true))
+    fp = int(np.count_nonzero(y_pred & ~y_true))
+    fn = int(np.count_nonzero(~y_pred &  y_true))
+    tn = int(np.count_nonzero(~y_pred & ~y_true))
+
+    # Metrics (zero-safe)
+    precision = tp / (tp + fp) if (tp + fp) else 0.0
+    recall    = tp / (tp + fn) if (tp + fn) else 0.0
+    f1        = (2 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
+    
+    # Compile all computed metrics into a structured object.
+    result_metrics = {
+        'err_C': err_C,
+        'err_iC': err_iC,
+        'err_S': err_S,
+        'nnz': nnz,
+        'nll': nll,
+        'sphr': sphr,
+        'precision': precision,
+        'recall': recall,
+        'f1': f1,
+        'kl': kl,
+        'aic':aic,
+        'runtime': result.runtime
+    }
+    return SimpleNamespace(**result_metrics)
