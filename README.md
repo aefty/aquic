@@ -28,8 +28,7 @@
 ### R Libraries (via rpy2)
 
 - `huge` — synthetic graph/covariance data generation
-- `TIGER` — TIGER precision matrix estimator
-- `clime` — CLIME estimator
+- `flare` — TIGER and CLIME estimators ([CRAN](https://cran.r-project.org/web/packages/flare/flare.pdf))
 
 ### System / C++ Dependencies (for building `quic_pybind`)
 
@@ -95,8 +94,8 @@ aquic/
 - `compute_glasso_cv` — Graphical Lasso with cross-validated `rho` (scikit-learn)
 - `compute_quic_cv` — QUIC with cross-validated `alpha`
 - `compute_ledoit` — Ledoit-Wolf shrinkage estimator
-- `compute_tiger` — TIGER (via R)
-- `compute_clime` — CLIME (via R)
+- `compute_tiger` — TIGER (via R `flare`)
+- `compute_clime` — CLIME (via R `flare`)
 - `compute_scov` — Sample covariance
 
 ---
