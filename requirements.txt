@@ -1,0 +1,24 @@
+# Python 3.12 required
+# Install with: pip install -r requirements.txt
+
+# Core scientific computing
+numpy==1.26.4
+scipy==1.17.1
+pandas==3.0.1
+
+# Machine learning
+scikit-learn==1.8.0
+joblib==1.5.3
+
+# Graph / network
+networkx==3.6.1
+gglasso==0.2.1
+
+# R integration
+rpy2==3.6.5
+
+# Neuroimaging (for fMRI data)
+nibabel==5.4.0
+
+# C++ binding build tool
+pybind11==3.0.2
