@@ -5,6 +5,7 @@ __pycache__/
 
 *.claude
 CLAUDE.md
+.DS_Store
 
 # Distribution / packaging
 .Python

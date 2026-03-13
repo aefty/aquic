@@ -1,6 +1,6 @@
-# AQUIC — XXXXXX  Inverse Covariance Estimation
+# [!!!!AI TEXT!!!!]AQUIC — XXXXXX  Inverse Covariance Estimation
 
-<AI FILLED> statistical toolkit for estimating sparse inverse covariance (precision) matrices using adaptively chosen quantile parameters. Includes benchmarking against classical methods and applications to fMRI brain imaging and gene expression data.
+ statistical toolkit for estimating sparse inverse covariance (precision) matrices using adaptively chosen quantile parameters. Includes benchmarking against classical methods and applications to fMRI brain imaging and gene expression data.
 
 ---
 
