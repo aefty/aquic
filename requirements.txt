@@ -28,3 +28,6 @@ pybind11==3.0.2
 matplotlib==3.10.8
 plotly==6.6.0
 nbformat==5.10.4
+
+# Miscelaneous
+tqdm==4.67.3

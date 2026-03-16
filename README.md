@@ -1,4 +1,4 @@
-# [!!!!AI TEXT!!!!]AQUIC — XXXXXX  Inverse Covariance Estimation
+# [!!!!AI TEXT!!!!]AQUIC — XXXXXX Inverse Covariance Estimation
 
  statistical toolkit for estimating sparse inverse covariance (precision) matrices using adaptively chosen quantile parameters. Includes benchmarking against classical methods and applications to fMRI brain imaging and gene expression data.
 
@@ -24,11 +24,17 @@
 | rpy2 | 3.6.5 | R integration (TIGER, CLIME, `huge` data generation) |
 | nibabel | 5.4.0 | Loading fMRI `.pconn.nii` neuroimaging files |
 | pybind11 | 3.0.2 | Build tool for the C++/Python extension |
+| metis | 0.2a5 | Graph partitioning tool |
+| tqdm  | 4.67.3 | Loading bars for longer experiments |
+| matplotlib | 3.10.8 | Matrix plotting, results plotting |
+| plotly | 6.6.0 | Brain parcel classification plotting |
+| nbformat | 5.10.4 | Tools for brain parcel classification plotting |
 
 ### R Libraries (via rpy2)
 
 - `huge` — synthetic graph/covariance data generation
 - `flare` — TIGER and CLIME estimators ([CRAN](https://cran.r-project.org/web/packages/flare/flare.pdf))
+- `MASS` - Support Functions and Datasets for Venables and Ripley's MASS ([CRAN](https://cran.r-project.org/web/packages/MASS/index.html))
 
 ### System / C++ Dependencies (for building `quic_pybind`)
 
@@ -57,6 +63,7 @@ cd aquic
 make
 cp quic_pybind*.so ../   # copy to project root
 ```
+
 
 ---
 
