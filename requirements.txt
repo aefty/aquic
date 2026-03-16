@@ -13,6 +13,7 @@ joblib==1.5.3
 # Graph / network
 networkx==3.6.1
 gglasso==0.2.1
+metis==0.2a5
 
 # R integration
 rpy2==3.6.5
@@ -22,3 +23,8 @@ nibabel==5.4.0
 
 # C++ binding build tool
 pybind11==3.0.2
+
+# Plotting
+matplotlib==3.10.8
+plotly==6.6.0
+nbformat==5.10.4
