@@ -1,6 +1,6 @@
 # [!!!!AI TEXT!!!!]AQUIC — XXXXXX Inverse Covariance Estimation
 
- statistical toolkit for estimating sparse inverse covariance (precision) matrices using adaptively chosen quantile parameters. Includes benchmarking against classical methods and applications to fMRI brain imaging and gene expression data.
+ Statistical toolkit for estimating sparse inverse covariance (precision) matrices using adaptively chosen quantile parameters. Includes benchmarking against classical methods and applications to fMRI brain imaging and gene expression data.
 
 ---
 
@@ -111,4 +111,4 @@ aquic/
 
 - **Synthetic benchmarks** — random, hub, cluster, band, scale-free graph structures
 - **fMRI** — Cole-Anticevic brain parcellation network (cortex + subcortex)
-- **Gene expression** — sparse regulatory network recovery
+- **Gene expression** — Sparse gene regulatory network recovery
