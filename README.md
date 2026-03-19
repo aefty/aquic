@@ -33,7 +33,7 @@
 ### R Libraries (via rpy2)
 
 - `huge` — synthetic graph/covariance data generation
-- `flare` — TIGER and CLIME estimators ([CRAN](https://cran.r-project.org/web/packages/flare/flare.pdf))
+- `flare` — Version 1.7.0, implements TIGER and CLIME estimators ([CRAN](https://cran.r-project.org/web/packages/flare/flare.pdf))
 - `MASS` - Support Functions and Datasets for Venables and Ripley's MASS ([CRAN](https://cran.r-project.org/web/packages/MASS/index.html))
 
 ### System / C++ Dependencies (for building `quic_pybind`)
