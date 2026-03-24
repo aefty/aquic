@@ -24,15 +24,7 @@ from _QUICGraphicalLassoCV import QUICGraphicalLassoCV
 import warnings
 from sklearn.exceptions import ConvergenceWarning
 
-# Suppress *all* warnings
-warnings.filterwarnings("ignore")
-warnings.filterwarnings("ignore", category=UserWarning)
-warnings.filterwarnings("ignore", category=RuntimeWarning)
-warnings.filterwarnings("ignore", category=ConvergenceWarning)
-
 _numpy2ri_converter = numpy2ri.converter
-
-
 
 def make_cov(p, data_type, seed=1):
     p = int(p)
@@ -438,7 +430,53 @@ def compute_clime(Y):
     return SimpleNamespace(**result)
 
 
-def compute_glasso_cv(Y):
+def compute_glasso_cv(Y,verbose=0):
+
+    p, n = Y.shape
+
+    # Normalize data if specified
+    Y, D, iD = normalize_data(Y)
+
+    try:
+        runtime = time.time()
+        caught_warnings = []
+        with warnings.catch_warnings(record=True) as caught_warnings:
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            warnings.simplefilter("always", category=ConvergenceWarning)
+
+            # Initialize GraphicalLassoCV
+            model = GraphicalLassoCV(n_jobs=8, tol=1e-4, max_iter=100,verbose=verbose)
+            model.fit(Y.T)  # Fit the model on transposed data
+
+        for w in caught_warnings:
+            if issubclass(w.category, ConvergenceWarning):
+                print(f"ConvergenceWarning: {w.message}")
+                break
+                
+        iC = model.precision_
+        C = model.covariance_
+
+        # De-normalize inverse covariance matrix if normalization was applied
+        iC = D @ iC @ D
+        C = iD @ C @ iD
+        l = model.alpha_
+        runtime = time.time() - runtime
+    except:
+        iC = np.eye(p) * np.nan
+        C = np.eye(p) * np.nan
+        l = np.nan
+        runtime = np.nan
+
+    # Compile results into a dictionary
+    result = {
+        'iC': copy.deepcopy(iC),
+        'C':  copy.deepcopy(C),
+        'l': l,
+        'runtime': runtime
+    }
+    return SimpleNamespace(**result)
+
+def compute_quic_cv(Y, verbose=0):
 
     p, n = Y.shape
 
@@ -448,14 +486,9 @@ def compute_glasso_cv(Y):
     try:
         runtime = time.time()
 
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=UserWarning)
-            warnings.simplefilter("ignore", category=ConvergenceWarning)
-            warnings.simplefilter("ignore", category=RuntimeWarning)
-
-            # Initialize GraphicalLassoCV
-            model = GraphicalLassoCV(n_jobs=8, tol=1e-4, max_iter=100,eps=1e-4)
-            model.fit(Y.T)  # Fit the model on transposed data
+        # Initialize QUICGraphicalLassoCV
+        model = QUICGraphicalLassoCV(n_jobs=8, tol=1e-4, max_iter=100,verbose=verbose)
+        model.fit(Y.T)  # Fit the model on transposed data
 
         iC = model.precision_
         C = model.covariance_
@@ -480,44 +513,26 @@ def compute_glasso_cv(Y):
     }
     return SimpleNamespace(**result)
 
-def compute_quic_cv(Y):
-
+def compute_quic_rho(Y, rho):
     p, n = Y.shape
 
-    # Normalize data if specified
     Y, D, iD = normalize_data(Y)
 
-    try:
-        runtime = time.time()
+    Yc = Y - Y.mean(axis=1, keepdims=True)
+    Yc = Yc * np.sqrt(n / (n - 1))
+    Y_f = np.array(np.ascontiguousarray(Yc, dtype=np.float64), order='F')
 
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=UserWarning)
-            warnings.simplefilter("ignore", category=ConvergenceWarning)
-            warnings.simplefilter("ignore", category=RuntimeWarning)
+    runtime = time.time()
+    iC_raw, C_raw = quic_pybind.QUIC(Y_f, float(rho), 1e-4, 100, 0.0, 0)
+    runtime = time.time() - runtime
 
-            # Initialize QUICGraphicalLassoCV
-            model = QUICGraphicalLassoCV(n_jobs=8, tol=1e-4, max_iter=100)
-            model.fit(Y.T)  # Fit the model on transposed data
+    iC = D @ np.asarray(iC_raw, dtype=float) @ D
+    C  = iD @ np.asarray(C_raw,  dtype=float) @ iD
 
-        iC = model.precision_
-        C = model.covariance_
-
-        # De-normalize inverse covariance matrix if normalization was applied
-        iC = D @ iC @ D
-        C = iD @ C @ iD
-        l = model.alpha_
-        runtime = time.time() - runtime
-    except:
-        iC = np.eye(p) * np.nan
-        C = np.eye(p) * np.nan
-        l = np.nan
-        runtime = np.nan
-
-    # Compile results into a dictionary
     result = {
         'iC': copy.deepcopy(iC),
         'C':  copy.deepcopy(C),
-        'l': l,
+        'l':  rho,
         'runtime': runtime
     }
     return SimpleNamespace(**result)
@@ -530,18 +545,13 @@ def compute_glasso_rho(Y, rho):
 
     start_time = time.time()
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=UserWarning)
-        warnings.simplefilter("ignore", category=ConvergenceWarning)
-        warnings.simplefilter("ignore", category=RuntimeWarning)
-
-        # Initialize GraphicalLasso with the provided tuning parameter 'rho'
-        model = GraphicalLasso(alpha=rho, tol=1e-4, max_iter=100)
-        model.fit(Y.T)  # Fit the model on the transposed data
+    # Initialize GraphicalLasso with the provided tuning parameter 'rho'
+    model = GraphicalLasso(alpha=rho, tol=1e-4, max_iter=100)
+    model.fit(Y.T)  # Fit the model on the transposed data
+    runtime = time.time() - start_time
 
     iC = model.precision_
     C = model.covariance_
-    runtime = time.time() - start_time
 
     # De-normalize inverse covariance matrix if normalization was applied
     iC = D @ iC @ D

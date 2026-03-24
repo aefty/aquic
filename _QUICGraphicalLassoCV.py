@@ -79,8 +79,8 @@ def _quic_solve(
         float(diag_penalty),
         int(verbose),
     )
-    return np.asarray(C, dtype=float), np.asarray(iC, dtype=float)
 
+    return np.asarray(C, dtype=float), np.asarray(iC, dtype=float)
 
 def _quic_path(
     X_train: np.ndarray,
@@ -112,7 +112,7 @@ def _quic_path(
             X_train, float(alpha),
             tol=tol, max_iter=max_iter,
             diag_penalty=diag_penalty,
-            verbose=max(0, verbose - 1),
+            verbose=verbose,
             assume_centered=assume_centered,
         )
         covariances.append(cov)
@@ -244,7 +244,7 @@ class QUICGraphicalLassoCV:
                         tol=float(self.tol),
                         max_iter=cv_max_iter,
                         diag_penalty=float(self.diag_penalty),
-                        verbose=inner_verbose,
+                        verbose=self.verbose,
                         assume_centered=self.assume_centered,
                     )
                     for train, test in cv.split(X, y)
