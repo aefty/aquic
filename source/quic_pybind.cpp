@@ -245,7 +245,7 @@ AQUIC(py::array_t<double> &Y_array, double k, double gamma, double tol,
           std::make_tuple(INF, INF, 0, 0, 0);
 
         // drop small values
-        double EPSILON_loc = tol; // std::sqrt(tol);
+        double EPSILON_loc = std::sqrt(tol);
         threshold(X, EPSILON_loc);
         threshold(W, EPSILON_loc);
 
@@ -392,7 +392,7 @@ QUIC_base(py::array_t<double> &Y_array, double L_ij, double tol,
           std::make_tuple(INF, INF, 0, 0, 0);
 
         // drop small values
-        double EPSILON_loc = tol; // std::sqrt(tol);
+        double EPSILON_loc = std::sqrt(tol);
         threshold(X, EPSILON_loc);
         threshold(W, EPSILON_loc);
 
@@ -413,7 +413,6 @@ QUIC_base(py::array_t<double> &Y_array, double L_ij, double tol,
 }
 
 PYBIND11_MODULE(quic_pybind, m) {
-  m.def("AQUIC", &AQUIC,
-        "Adaptive Quadratic Inverse Covariance Matrix Estimation");
+  m.def("AQUIC", &AQUIC, "A - Quadratic Inverse Covariance Matrix Estimation");
   m.def("QUIC", &QUIC_base, "Quadratic Inverse Covariance Matrix Estimation");
 }
