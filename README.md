@@ -51,7 +51,7 @@
 
 ## Installation
 
-> **macOS**: a precompiled shared library (`quic_pybind.cpython-312-darwin.so`) is included and can be used directly — no build step required.
+> **macOS**: a precompiled shared library (`quic_pybind.cpython-XXX-darwin.so`) is included and can be used directly — no build step required.
 >
 > **All other platforms**: the `makefile` in `source/` must be edited and compiled for your specific platform before use.
 
