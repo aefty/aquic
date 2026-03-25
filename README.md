@@ -51,17 +51,19 @@
 
 ## Installation
 
+> **macOS**: a precompiled shared library (`quic_pybind.cpython-312-darwin.so`) is included and can be used directly — no build step required.
+>
+> **All other platforms**: the `makefile` in `source/` must be edited and compiled for your specific platform before use.
+
 ```bash
 # 1. Install Python dependencies
 pip install -r requirements.txt
 
-# 2. Install system libraries (macOS / Homebrew)
-brew install eigen boost libomp
-
-# 3. Build the C++ extension
-cd aquic
+# 2. (Non-macOS only) Install system libraries and build the C++ extension
+brew install eigen boost libomp   # adjust for your package manager
+cd source
 make
-make install  # copies the shared libary to project root
+make install  # copies the shared library to project root
 ```
 
 ---
@@ -75,7 +77,7 @@ aquic/
 │   ├── quic_pybind.cpp            # pybind11 Python/C++ bindings (AQUIC, QUIC)
 │   └── makefile                   # Build configuration
 ├── data/
-│   ├── fMRI/                      # Cole-Anticevic brain parcellation + covariance matrix
+│   ├── fMRI/                      # Cole-Anticevic brain parcellation data matrix
 │   └── gene/                      # Gene expression CSV data (HapMap LCL)
 ├── results/                       # Cached results (pickle files)
 ├── _util.py                       # Estimator wrappers and evaluation metrics
