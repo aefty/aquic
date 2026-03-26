@@ -28,7 +28,6 @@
 | tqdm  | 4.67.3 | Loading bars for longer experiments |
 | matplotlib | 3.10.8 | Matrix plotting, results plotting |
 | plotly | 6.6.0 | Brain parcel classification plotting |
-| nbformat | 5.10.4 | Tools for brain parcel classification plotting |
 
 ### R Libraries (via rpy2)
 

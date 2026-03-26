@@ -345,3 +345,50 @@ class QUICGraphicalLassoCV:
             np.asarray(X_test, dtype=float), assume_centered=self.assume_centered
         )
         return log_likelihood(test_emp_cov, self.precision_)
+
+
+# ---------------------------------------------------------------------------
+# Verification: QUICGraphicalLassoCV vs GraphicalLassoCV
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    import os
+    os.environ["OPENBLAS_NUM_THREADS"] = "1"
+    os.environ["OMP_NUM_THREADS"] = "1"
+    os.environ["MKL_NUM_THREADS"] = "1"
+    os.environ["NUMEXPR_NUM_THREADS"] = "1"
+    os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+
+    import time
+    import matplotlib.pyplot as plt
+    from sklearn.covariance import GraphicalLassoCV
+    from _util import make_cov, make_samples
+
+    iC_true, C_true = make_cov(p=256, data_type="cluster")
+
+    err_1 = []
+    err_2 = []
+    n_set = [10, 100, 1000, 10000]
+
+    for n in n_set:
+        Y = make_samples(cov=C_true, n=n)
+
+        t = time.time()
+        model = QUICGraphicalLassoCV(tol=1e-4, max_iter=100, n_jobs=-1)
+        model.fit(Y.T)
+        err_1.append(np.linalg.norm(iC_true - model.precision_))
+        print(f"QUICGraphicalLassoCV  n={n:6d}  alpha={model.alpha_:.4e}  err={err_1[-1]:.4f}  t={time.time()-t:.1f}s")
+
+        t = time.time()
+        model = GraphicalLassoCV(tol=1e-4, max_iter=100, n_jobs=-1)
+        model.fit(Y.T)
+        err_2.append(np.linalg.norm(iC_true - model.precision_))
+        print(f"GraphicalLassoCV      n={n:6d}  alpha={model.alpha_:.4e}  err={err_2[-1]:.4f}  t={time.time()-t:.1f}s")
+
+    plt.loglog(n_set, err_1, label="QUICGraphicalLassoCV")
+    plt.loglog(n_set, err_2, label="GraphicalLassoCV")
+    plt.xlabel("n samples")
+    plt.ylabel("‖iC_hat − iC_true‖_F")
+    plt.legend()
+    plt.title("QUICGraphicalLassoCV vs GraphicalLassoCV")
+    plt.show()
